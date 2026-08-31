@@ -1,0 +1,54 @@
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_DATABASE: app_production
+      MYSQL_USER: backup
+      MYSQL_PASSWORD: backuppw
+    ports: ["3307:3306"]          # 3307 avoids clashing with a local mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prootpw"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [test]
+
+  backup:
+    build:
+      context: .
+      args:
+        BASE_IMAGE: mysql:8.4
+        TARGETARCH: arm64
+    init: true
+    environment:
+      TZ: Africa/Lagos
+      DB_ENGINE: mysql
+      DB_HOST: db
+      DB_USER: root
+      DB_PASSWORD: rootpw
+      DB_NAME: app_production
+      BACKUP_LABEL: local-test
+      BACKUP_CRON: "*/2 * * * *"     # every 2 min, so you're not waiting for 04:00
+      RETENTION: 1d
+      MIN_INTERVAL_HOURS: 0          # disable the gate while testing
+      RUN_ON_START: "true"
+      RESTIC_REPOSITORY: /repo
+      RESTIC_PASSWORD: testpass
+      NOTIFIER: none                 # switch to telegram once the pipeline works
+    volumes:
+      - ./_repo:/repo                # visible on your Mac — inspect it
+      - restic-cache:/cache
+      - backup-state:/state
+      - ./hooks:/app/hooks:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [test]
+
+volumes:
+  restic-cache:
+  backup-state:
+
+networks:
+  test:
