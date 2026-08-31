@@ -1,7 +1,8 @@
 ARG BASE_IMAGE=mysql:8.4
 FROM ${BASE_IMAGE}
 
-ARG TARGETARCH          # <- declared, not assigned; BuildKit supplies it
+# Declared, not assigned; BuildKit supplies it
+ARG TARGETARCH
 ARG SUPERCRONIC_VERSION=v0.2.33
 
 COPY --from=restic/restic:0.18.0 /usr/bin/restic /usr/local/bin/restic
