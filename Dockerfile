@@ -7,12 +7,15 @@ ARG SUPERCRONIC_VERSION=v0.2.33
 COPY --from=restic/restic:0.18.0 /usr/bin/restic /usr/local/bin/restic
 
 RUN set -eux; \
-    if   command -v microdnf >/dev/null; then microdnf install -y util-linux && microdnf clean all; \
-    elif command -v dnf      >/dev/null; then dnf install -y util-linux && dnf clean all; \
-    elif command -v apt-get  >/dev/null; then apt-get update && apt-get install -y --no-install-recommends util-linux && rm -rf /var/lib/apt/lists/*; \
-    elif command -v apk      >/dev/null; then apk add --no-cache util-linux bash; \
+    PKGS="util-linux"; \
+    command -v curl >/dev/null || PKGS="$PKGS curl"; \
+    if   command -v microdnf >/dev/null; then microdnf install -y $PKGS && microdnf clean all; \
+    elif command -v dnf      >/dev/null; then dnf install -y $PKGS && dnf clean all; \
+    elif command -v apt-get  >/dev/null; then apt-get update && apt-get install -y --no-install-recommends $PKGS ca-certificates && rm -rf /var/lib/apt/lists/*; \
+    elif command -v apk      >/dev/null; then apk add --no-cache $PKGS bash curl; \
     else echo "no supported package manager" >&2; exit 1; fi; \
-    command -v curl >/dev/null || { echo "FATAL: curl missing from base image" >&2; exit 1; }
+    command -v flock >/dev/null || { echo "FATAL: flock missing after install" >&2; exit 1; }; \
+    command -v curl  >/dev/null || { echo "FATAL: curl missing after install"  >&2; exit 1; }
 
 RUN set -eux; \
     case "${TARGETARCH}" in \
