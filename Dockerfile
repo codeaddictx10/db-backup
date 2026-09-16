@@ -42,6 +42,7 @@ ENV DB_ENGINE=mysql \
     BACKUP_CRON="0 4,18 * * *" \
     RETENTION="7d" \
     MIN_INTERVAL_HOURS=10 \
+    BACKUP_PAUSED=false \
     RESTIC_CACHE_DIR=/cache/restic
 
 VOLUME ["/state", "/cache"]

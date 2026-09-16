@@ -19,6 +19,7 @@ notify_send() {
     start)   icon=":hourglass:" ;;
     success) icon=":white_check_mark:" ;;
     fail)    icon=":x:" ;;
+    paused)  icon=":double_vertical_bar:" ;;
     *)       icon=":information_source:" ;;
   esac
 

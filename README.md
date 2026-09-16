@@ -164,6 +164,7 @@ Do this **today**. Until a restore has produced correct row counts, you have an 
 | `RETENTION` | `7d` | Passed to `restic forget --keep-within` |
 | `MIN_INTERVAL_HOURS` | `10` | Gate: skip if a backup succeeded this recently |
 | `RUN_ON_START` | `true` | Catch-up backup on container start |
+| `BACKUP_PAUSED` | `false` | `true` skips every run (cron and startup) and sends a "paused" notification instead |
 | `BACKUP_LABEL` | `$DB_NAME` | restic tag; scopes retention |
 | `RESTIC_REPOSITORY` | — | Required |
 | `RESTIC_PASSWORD` | — | Required. Irrecoverable if lost |
@@ -419,6 +420,10 @@ docker rm -f restore-test
 ```
 
 Overriding `DB_HOST` on the command line works because it's an env var rather than a hardcoded service name — the same image restores anywhere.
+
+### Pausing backups while you test
+
+Set `BACKUP_PAUSED=true` on the `backup` service and `docker compose up -d backup`. The container stays up and `restore.sh` still works, but every scheduled run (and the startup catch-up) exits immediately and sends a ⏸️ "paused" notification instead of dumping — so a 04:00 backup can't land mid-drill and you can't forget it's off. Set it back to `false` and restart to resume.
 
 **Repeat quarterly.** Put it in a calendar.
 

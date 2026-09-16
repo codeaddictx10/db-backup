@@ -20,6 +20,7 @@ notify_send() {
     start)   icon="⏳" ;;
     success) icon="✅" ;;
     fail)    icon="❌" ;;
+    paused)  icon="⏸️" ;;
     *)       icon="ℹ️" ;;
   esac
 

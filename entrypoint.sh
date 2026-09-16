@@ -57,6 +57,9 @@ supercronic -test "$CRONTAB" || { log "FATAL: invalid crontab"; exit 1; }
 
 log "schedule: ${BACKUP_CRON} (TZ=${TZ:-UTC})"
 
+[[ "${BACKUP_PAUSED:-false}" == "true" ]] && \
+  log "WARN: BACKUP_PAUSED=true — no backups will run until this is unset"
+
 # ---------- 4. catch-up ----------
 if [[ "${RUN_ON_START:-true}" == "true" ]]; then
   log "startup catch-up check"

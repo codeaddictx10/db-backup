@@ -15,6 +15,13 @@ NOTIFIER_FILE="/app/notifiers/${NOTIFIER:-none}.sh"
 [[ -f "$NOTIFIER_FILE" ]] || NOTIFIER_FILE="/app/notifiers/none.sh"
 source "$NOTIFIER_FILE"
 
+# ---------- 0. pause ----------
+if [[ "${BACKUP_PAUSED:-false}" == "true" ]]; then
+  log "BACKUP_PAUSED=true — skipping this run"
+  notify_send paused "Scheduled backup skipped — BACKUP_PAUSED=true. Unset to resume." || true
+  exit 0
+fi
+
 # ---------- 1. gate ----------
 if [[ -f "$STAMP" ]]; then
   AGE=$(( ( $(date +%s) - $(stat -c %Y "$STAMP") ) / 3600 ))
