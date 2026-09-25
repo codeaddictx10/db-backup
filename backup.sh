@@ -18,7 +18,7 @@ source "$NOTIFIER_FILE"
 # ---------- 0. pause ----------
 if [[ "${BACKUP_PAUSED:-false}" == "true" ]]; then
   log "BACKUP_PAUSED=true — skipping this run"
-  notify_send paused "Scheduled backup skipped — BACKUP_PAUSED=true. Unset to resume." || true
+  notify_send paused "Scheduled backup skipped." || true
   exit 0
 fi
 
