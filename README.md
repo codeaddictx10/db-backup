@@ -142,7 +142,15 @@ You should see: config validated → repository initialised → startup backup �
 
 ### 6. Run the restore drill
 
-Do this **today**. Until a restore has produced correct row counts, you have an upload job, not a backup. See [Restoring](#restoring).
+Do this **today**. Until a restore has produced correct row counts, you have an upload job, not a backup.
+
+From a clone of this repo, on any machine with Docker:
+
+```bash
+ENV_FILE=/path/to/your/.env ./restore-test.sh
+```
+
+It restores a snapshot you pick into a throwaway local database and leaves it running for you to check. Production is never touched. See [The drill](#the-drill--never-rehearse-against-production).
 
 ---
 
@@ -380,6 +388,11 @@ Storage plateaus rather than growing: each run prunes anything past the window. 
 
 ## Restoring
 
+Two different jobs. Don't mix them up:
+
+- **Checking a backup works?** Use [the drill](#the-drill--never-rehearse-against-production): `./restore-test.sh`. It restores into a throwaway copy and is safe to run any time.
+- **Production is broken and you need the data back?** Use [Restore](#restore) below. It **overwrites the live database**.
+
 ### List snapshots
 
 ```bash
@@ -399,6 +412,35 @@ Pass a snapshot ID instead of `latest` for a specific point in time.
 The `I_UNDERSTAND_THIS_OVERWRITES` guard isn't theatre. Restore is the one destructive operation here, and it gets run by someone tired at 3am during an outage.
 
 ### The drill — never rehearse against production
+
+Run it from a clone of this repo: the script builds the backup image from the repo's own files, so it isn't available inside the published image. Any machine with Docker works (your laptop, or the server after a `git clone`).
+
+```bash
+git clone <this-repo> db-backup && cd db-backup
+
+./restore-test.sh                             # uses .env in the current folder
+ENV_FILE=/srv/backup/.env ./restore-test.sh   # or point at your deploy's .env
+```
+
+`.env` is looked up in the folder you run the command from, not next to the script. With no env file, the script just asks for everything.
+
+Needs only Docker — it stops and tells you if Docker is missing or not running. It reads `RESTIC_REPOSITORY`, `RESTIC_PASSWORD` and the R2 keys from the env file (shell env wins; anything missing is prompted for), then:
+
+1. lists the snapshots and asks which one to restore (Enter = latest)
+2. detects the engine from the dump's extension and asks for the server version and target database name
+3. starts a throwaway `restore-test-db` container on `127.0.0.1` — MySQL `3307`, Postgres `5433`, Mongo `27018` (override with `RESTORE_PORT`)
+4. builds this repo's image for that engine and runs the same `restore.sh` production uses against it
+5. prints every table with its row count, plus the connection URL, a shell command, and the teardown command
+
+The target is always the throwaway container — `DB_HOST` from your `.env` is never used. Compare the row counts against production, test by hand, then:
+
+```bash
+docker rm -f restore-test-db && docker network rm restore-test
+```
+
+Test restores set `RESTORE_SKIP_ROLES=true`: Postgres restores with `--no-owner --no-acl` (the fresh server doesn't have production's roles) and Mongo skips the `admin` database (so production's users don't replace the throwaway server's root login). Production restores are unchanged.
+
+#### By hand
 
 ```bash
 # throwaway target

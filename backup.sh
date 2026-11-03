@@ -61,7 +61,7 @@ fi
 # ---------- 5. dump ----------
 FAILED_AT="database dump"
 DUMP_FILE="${TMP}/${LABEL}-$(date +%F_%H-%M-%S).$(driver_ext)"
-log "dumping ${DB_NAME} from ${DB_HOST}"
+log "dumping ${DB_NAME} from ${DB_HOST:-DB_URI}"
 driver_dump > "$DUMP_FILE"
 
 DUMP_SIZE=$(du -h "$DUMP_FILE" | cut -f1)

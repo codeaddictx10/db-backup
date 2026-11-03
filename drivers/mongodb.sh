@@ -5,5 +5,8 @@ driver_dump() {
 }
 
 driver_restore() {
-  mongorestore --uri="$DB_URI" --archive --gzip --drop
+  local opts=(--archive --gzip --drop)
+  # Test restores keep the fresh server's own users instead of production's
+  [[ "${RESTORE_SKIP_ROLES:-false}" == "true" ]] && opts+=(--nsExclude='admin.*')
+  mongorestore --uri="$DB_URI" "${opts[@]}"
 }
