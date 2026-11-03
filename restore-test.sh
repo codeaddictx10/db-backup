@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # Restore drill: restore a snapshot into a throwaway local database container
-# and leave it running so you can test it by hand. Needs only Docker.
+# and leave it running so you can test it by hand. Needs only Docker, and
+# works as a single downloaded file — no clone required.
 #
-#   ./restore-test.sh                     # repo credentials from ./.env
-#   ENV_FILE=prod.env ./restore-test.sh   # ...or from another file
+#   ./restore-test.sh                          # repo credentials from ./.env
+#   ENV_FILE=prod.env ./restore-test.sh        # ...or from another file
+#   RESTORE_VERSION=v0.1.0 ./restore-test.sh   # test with that release's image
+#   RESTORE_VERSION=local ./restore-test.sh    # build from this clone instead
 #
 # Values already exported in your shell win over the env file; anything
 # missing from both is prompted for. RESTORE_PORT overrides the local port.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+IMAGE_REPO="${RESTORE_IMAGE_REPO:-ghcr.io/codeaddictx10/db-backup}"
 RESTIC_IMAGE=restic/restic:0.18.0
 NET=restore-test
 CTR=restore-test-db
@@ -89,9 +93,9 @@ TAG=$(grep -o '"tags":\["[^"]*"' <<<"$INFO" | head -n 1 | sed 's/.*\["//; s/"$//
 # ---------- 4. engine, version, target db ----------
 # The dump's extension (driver_ext) tells us the engine
 case "$DUMP_PATH" in
-  *.sql.gz)     ENGINE=mysql;    NAME=MySQL;      IMG=mysql;    VER=8.4; PORT=3306;  HOST_PORT=${RESTORE_PORT:-3307} ;;
-  *.dump)       ENGINE=postgres; NAME=PostgreSQL; IMG=postgres; VER=16;  PORT=5432;  HOST_PORT=${RESTORE_PORT:-5433} ;;
-  *.archive.gz) ENGINE=mongodb;  NAME=MongoDB;    IMG=mongo;    VER=7;   PORT=27017; HOST_PORT=${RESTORE_PORT:-27018} ;;
+  *.sql.gz)     ENGINE=mysql;    NAME=MySQL;      IMG=mysql;    PREFIX=mysql; VER=8.4; PORT=3306;  HOST_PORT=${RESTORE_PORT:-3307} ;;
+  *.dump)       ENGINE=postgres; NAME=PostgreSQL; IMG=postgres; PREFIX=pg;    VER=16;  PORT=5432;  HOST_PORT=${RESTORE_PORT:-5433} ;;
+  *.archive.gz) ENGINE=mongodb;  NAME=MongoDB;    IMG=mongo;    PREFIX=mongo; VER=7;   PORT=27017; HOST_PORT=${RESTORE_PORT:-27018} ;;
   *) die "can't tell the engine from the snapshot path: ${DUMP_PATH:-<none>}" ;;
 esac
 log "Snapshot $SNAP is a $NAME dump ($(basename "$DUMP_PATH"))"
@@ -127,7 +131,31 @@ case $ENGINE in
     SHELL_CMD="docker exec -it $CTR mongosh -u root -p $PW" ;;
 esac
 
-# ---------- 5. throwaway database ----------
+# ---------- 5. backup image ----------
+# publish.yml names tags <prefix><major> (mysql8, pg16, mongo7), so any
+# version added there is found here without changes.
+RELEASE="${RESTORE_VERSION:-}"
+PUB_IMG="$IMAGE_REPO:$PREFIX${VER%%.*}${RELEASE:+-$RELEASE}"
+
+if [[ "$RELEASE" != local ]] && log "Pulling $PUB_IMG" && docker pull -q "$PUB_IMG" >/dev/null 2>&1; then
+  BACKUP_IMG=$PUB_IMG
+elif [[ -z "$RELEASE" || "$RELEASE" == local ]] && [[ -f "$SCRIPT_DIR/Dockerfile" ]]; then
+  # Not published (or local asked for): build from this clone
+  BACKUP_IMG="db-backup:restore-test-$IMG$VER"
+  log "Building $BACKUP_IMG from $SCRIPT_DIR (first build takes a minute)"
+  docker build -q --build-arg BASE_IMAGE="$IMG:$VER" \
+    --build-arg TARGETARCH="$(docker version -f '{{.Server.Arch}}')" \
+    -t "$BACKUP_IMG" "$SCRIPT_DIR" >/dev/null
+elif [[ "$RELEASE" == local ]]; then
+  die "RESTORE_VERSION=local builds from the repo — run the script from a clone"
+elif [[ -n "$RELEASE" ]]; then
+  # A named release must be used as-is, never swapped for a local build
+  die "couldn't pull $PUB_IMG — check that release exists and publishes $NAME ${VER%%.*}"
+else
+  die "couldn't pull $PUB_IMG — add $NAME ${VER%%.*} to publish.yml, or run from a clone to build it"
+fi
+
+# ---------- 6. throwaway database ----------
 if docker container inspect "$CTR" >/dev/null 2>&1; then
   read -rp "A '$CTR' container already exists. Replace it? [y/N]: " v || true
   [[ "${v:-}" =~ ^[Yy] ]] || die "aborted — remove it yourself with: docker rm -f $CTR"
@@ -138,13 +166,6 @@ docker network inspect "$NET" >/dev/null 2>&1 || docker network create "$NET" >/
 log "Starting $NAME $VER as '$CTR' on 127.0.0.1:$HOST_PORT"
 docker run -d --name "$CTR" --hostname "$CTR" --network "$NET" \
   -p "127.0.0.1:$HOST_PORT:$PORT" "${DB_ENV[@]}" "$IMG:$VER" >/dev/null
-
-# Built while the database initialises
-BACKUP_IMG="db-backup:restore-test-$IMG$VER"
-log "Building $BACKUP_IMG from this repo (first build takes a minute)"
-docker build -q --build-arg BASE_IMAGE="$IMG:$VER" \
-  --build-arg TARGETARCH="$(docker version -f '{{.Server.Arch}}')" \
-  -t "$BACKUP_IMG" "$SCRIPT_DIR" >/dev/null
 
 # Probe over the container's network address: every image's init phase
 # runs a temporary server that isn't reachable there, so "ready" means
@@ -163,7 +184,7 @@ for i in $(seq 1 90); do
   sleep 2
 done
 
-# ---------- 6. restore (the same restore.sh production uses) ----------
+# ---------- 7. restore (the same restore.sh production uses) ----------
 log "Restoring snapshot $SNAP"
 docker run --rm --network "$NET" "${REPO_ARGS[@]}" \
   -e DB_ENGINE="$ENGINE" -e DB_HOST="$CTR" -e DB_PORT="$PORT" \
@@ -174,7 +195,7 @@ docker run --rm --network "$NET" "${REPO_ARGS[@]}" \
   --entrypoint /app/restore.sh "$BACKUP_IMG" "$SNAP" \
   || die "restore failed — '$CTR' is left running for inspection (docker logs $CTR)"
 
-# ---------- 7. row counts ----------
+# ---------- 8. row counts ----------
 show_counts() {
   case $ENGINE in
     mysql)
@@ -203,7 +224,7 @@ show_counts() {
 log "Row counts — compare these against production"
 show_counts || echo "(couldn't read row counts — check by hand)"
 
-# ---------- 8. hand-off ----------
+# ---------- 9. hand-off ----------
 cat <<EOF
 
 ==> Restored snapshot $SNAP into a throwaway $NAME $VER. It keeps running until you remove it.

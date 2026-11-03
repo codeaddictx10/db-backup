@@ -144,10 +144,12 @@ You should see: config validated → repository initialised → startup backup �
 
 Do this **today**. Until a restore has produced correct row counts, you have an upload job, not a backup.
 
-From a clone of this repo, on any machine with Docker:
+On any machine with Docker — no clone needed:
 
 ```bash
-ENV_FILE=/path/to/your/.env ./restore-test.sh
+VERSION=v0.2.0   # the release your backup container runs
+curl -fsSLO https://raw.githubusercontent.com/codeaddictx10/db-backup/$VERSION/restore-test.sh
+ENV_FILE=/path/to/your/.env RESTORE_VERSION=$VERSION bash restore-test.sh
 ```
 
 It restores a snapshot you pick into a throwaway local database and leaves it running for you to check. Production is never touched. See [The drill](#the-drill--never-rehearse-against-production).
@@ -390,7 +392,7 @@ Storage plateaus rather than growing: each run prunes anything past the window. 
 
 Two different jobs. Don't mix them up:
 
-- **Checking a backup works?** Use [the drill](#the-drill--never-rehearse-against-production): `./restore-test.sh`. It restores into a throwaway copy and is safe to run any time.
+- **Checking a backup works?** Use [the drill](#the-drill--never-rehearse-against-production): `restore-test.sh`. It restores into a throwaway copy and is safe to run any time.
 - **Production is broken and you need the data back?** Use [Restore](#restore) below. It **overwrites the live database**.
 
 ### List snapshots
@@ -413,23 +415,36 @@ The `I_UNDERSTAND_THIS_OVERWRITES` guard isn't theatre. Restore is the one destr
 
 ### The drill — never rehearse against production
 
-Run it from a clone of this repo: the script builds the backup image from the repo's own files, so it isn't available inside the published image. Any machine with Docker works (your laptop, or the server after a `git clone`).
+One file, any machine with Docker (your laptop or the server) — no clone needed. Download it from the release you run in production, so the drill tests the same code:
 
 ```bash
-git clone <this-repo> db-backup && cd db-backup
+VERSION=v0.2.0   # the release your backup container runs
+curl -fsSLO https://raw.githubusercontent.com/codeaddictx10/db-backup/$VERSION/restore-test.sh
 
-./restore-test.sh                             # uses .env in the current folder
-ENV_FILE=/srv/backup/.env ./restore-test.sh   # or point at your deploy's .env
+RESTORE_VERSION=$VERSION bash restore-test.sh                           # uses .env in the current folder
+ENV_FILE=/srv/backup/.env RESTORE_VERSION=$VERSION bash restore-test.sh  # or point at your deploy's .env
 ```
 
+Download it with `curl -O`, as above. Don't pipe it into `bash`: the script reads your answers from the keyboard, and with `curl | bash` it would read its own source code instead.
+
 `.env` is looked up in the folder you run the command from, not next to the script. With no env file, the script just asks for everything.
+
+Which backup image it restores with:
+
+| `RESTORE_VERSION` | Image | Use it for |
+|---|---|---|
+| `v0.1.0` (any release) | `ghcr.io/codeaddictx10/db-backup:mysql8-v0.1.0` etc. | testing exactly what production runs |
+| unset | the moving tag, e.g. `:mysql8` (latest `main`) | quick checks |
+| `local` | built from the clone the script is in | testing unreleased changes |
+
+The script works out the image name from the version you type: `<prefix><major>`, so MySQL `8.4` uses `mysql8`, PostgreSQL `17` uses `pg17` and MongoDB `8` uses `mongo8`. Add a version to the `publish.yml` matrix with a tag following that pattern, and the drill finds it with no change to the script. If the image isn't published, the script builds it from the clone it's in. Outside a clone it stops with an error, and it never swaps a named `RESTORE_VERSION` for a local build.
 
 Needs only Docker — it stops and tells you if Docker is missing or not running. It reads `RESTIC_REPOSITORY`, `RESTIC_PASSWORD` and the R2 keys from the env file (shell env wins; anything missing is prompted for), then:
 
 1. lists the snapshots and asks which one to restore (Enter = latest)
 2. detects the engine from the dump's extension and asks for the server version and target database name
 3. starts a throwaway `restore-test-db` container on `127.0.0.1` — MySQL `3307`, Postgres `5433`, Mongo `27018` (override with `RESTORE_PORT`)
-4. builds this repo's image for that engine and runs the same `restore.sh` production uses against it
+4. pulls the matching backup image (or builds it, see the table above) and runs the same `restore.sh` production uses against it
 5. prints every table with its row count, plus the connection URL, a shell command, and the teardown command
 
 The target is always the throwaway container — `DB_HOST` from your `.env` is never used. Compare the row counts against production, test by hand, then:
