@@ -79,7 +79,10 @@ log "snapshot ${SNAPSHOT_ID}"
 # ---------- 7. retention ----------
 FAILED_AT="restic forget/prune"
 log "pruning to ${RETENTION}"
-restic forget --tag "$LABEL" --keep-within "${RETENTION}" --prune
+# Group by tag: the default (host + path) puts every snapshot in its own
+# group, since the dump path and container hostname change each run, and
+# --keep-within then never removes anything.
+restic forget --tag "$LABEL" --group-by tags --keep-within "${RETENTION}" --prune
 
 # ---------- 8. success ----------
 touch "$STAMP"

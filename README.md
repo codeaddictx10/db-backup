@@ -377,8 +377,10 @@ You *can* mount over `/app/backup.sh` to patch behaviour. Avoid it outside debug
 ## Retention
 
 ```bash
-restic forget --tag "$LABEL" --keep-within 7d --prune
+restic forget --tag "$LABEL" --group-by tags --keep-within 7d --prune
 ```
+
+**`--group-by tags` is what makes retention delete anything.** By default restic splits snapshots into groups by host and path, and applies `--keep-within` to each group separately, measured from that group's newest snapshot. Every run here writes its dump to a fresh temp path, and the hostname changes whenever the container is recreated, so each snapshot ends up alone in its own group. It's then always "the newest", so it's always kept. Without this flag, nothing is ever removed and storage grows forever. Grouping by tag puts all of one database's snapshots into a single group.
 
 **Use `--keep-within`, not `--keep-daily`.** `--keep-daily 7` keeps the last snapshot of each of the last 7 days — with two runs a day it silently discards your 04:00 backup every day. `--keep-within 7d` keeps everything inside the window: all 14 snapshots.
 
