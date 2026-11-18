@@ -209,7 +209,7 @@ It restores a snapshot you pick into a throwaway local database and leaves it ru
 
 Changing a build arg requires `docker compose build`, not `up`.
 
-**Why the base image is the version selector:** `mysqldump` and `pg_dump` must match their server's major version, or dumps fail or silently drop objects. The official `mysql:8.4` and `postgres:16` images ship exactly the right client. That's why this publishes one tag per engine version rather than one fat image.
+**Why the base image is the version selector:** `mysqldump` and `pg_dump` must match their server's major version, or dumps fail or silently drop objects. The official `mysql:8.4` and `postgres:16` images ship exactly the right client. That's why this publishes one tag per engine version rather than one fat image: `mysql8` (8.4) and `mysql9` (9.7) for MySQL — pick the one matching your server.
 
 ---
 
@@ -439,7 +439,7 @@ Which backup image it restores with:
 | unset | the moving tag, e.g. `:mysql8` (latest `main`) | quick checks |
 | `local` | built from the clone the script is in | testing unreleased changes |
 
-The script works out the image name from the version you type: `<prefix><major>`, so MySQL `8.4` uses `mysql8`, PostgreSQL `17` uses `pg17` and MongoDB `8` uses `mongo8`. Add a version to the `publish.yml` matrix with a tag following that pattern, and the drill finds it with no change to the script. If the image isn't published, the script builds it from the clone it's in. Outside a clone it stops with an error, and it never swaps a named `RESTORE_VERSION` for a local build.
+The script works out the image name from the version you type: `<prefix><major>`, so MySQL `8.4` uses `mysql8`, MySQL `9.7` uses `mysql9`, PostgreSQL `17` uses `pg17` and MongoDB `8` uses `mongo8`. Add a version to the `publish.yml` matrix with a tag following that pattern, and the drill finds it with no change to the script. If the image isn't published, the script builds it from the clone it's in. Outside a clone it stops with an error, and it never swaps a named `RESTORE_VERSION` for a local build.
 
 Needs only Docker — it stops and tells you if Docker is missing or not running. It reads `RESTIC_REPOSITORY`, `RESTIC_PASSWORD` and the R2 keys from the env file (shell env wins; anything missing is prompted for), then:
 
@@ -557,6 +557,8 @@ docker compose exec backup restic check --read-data-subset=5%
 **Spurious failure on every reboot** — the startup backup is racing the database. Add a healthcheck with `condition: service_healthy`, or set `RUN_ON_START=false`.
 
 **Dump fails on `SHOW CREATE VIEW` or triggers** — missing `SHOW VIEW` / `TRIGGER` grants on the backup user.
+
+**`Plugin 'mysql_native_password' is not loaded` on MySQL 9** — 9.x removed that auth plugin, so a backup user created with it can't log in. Switch it on the server: `ALTER USER 'backup'@'%' IDENTIFIED WITH caching_sha2_password BY '...';`.
 
 ---
 
