@@ -45,10 +45,13 @@ Least privilege — root is unnecessary.
 -- MySQL
 CREATE USER 'backup'@'%' IDENTIFIED BY 'change-me';
 GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES ON app_production.* TO 'backup'@'%';
+GRANT SHOW_ROUTINE ON *.* TO 'backup'@'%';
 FLUSH PRIVILEGES;
 ```
 
-`SHOW VIEW` and `TRIGGER` are required by `--routines --triggers`. Omit them and the dump fails partway through.
+`SHOW VIEW` covers views and `TRIGGER` covers `--triggers`; omit either and the dump fails partway through. `SHOW_ROUTINE` covers `--routines`, and it's the dangerous one to miss: without it the dump **succeeds but silently leaves out every stored procedure and function**. It's a global privilege (MySQL 8.0.20+), so it has to be granted `ON *.*`.
+
+On MySQL 9, masking policies (`CREATE MASKING POLICY`) are not backed up: reading them needs access to the `mysql` system schema, which a backup user shouldn't have. If you use them, recreate them from your migrations after a restore.
 
 ```sql
 -- PostgreSQL
@@ -557,6 +560,8 @@ docker compose exec backup restic check --read-data-subset=5%
 **Spurious failure on every reboot** — the startup backup is racing the database. Add a healthcheck with `condition: service_healthy`, or set `RUN_ON_START=false`.
 
 **Dump fails on `SHOW CREATE VIEW` or triggers** — missing `SHOW VIEW` / `TRIGGER` grants on the backup user.
+
+**Restored database has no stored procedures or functions** — the backup user lacks `SHOW_ROUTINE`, so `mysqldump` skipped them without an error. Run `GRANT SHOW_ROUTINE ON *.* TO 'backup'@'%';`. Snapshots taken before the grant don't contain the routines, so take a fresh backup.
 
 **`Plugin 'mysql_native_password' is not loaded` on MySQL 9** — 9.x removed that auth plugin, so a backup user created with it can't log in. Switch it on the server: `ALTER USER 'backup'@'%' IDENTIFIED WITH caching_sha2_password BY '...';`.
 
