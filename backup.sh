@@ -71,7 +71,7 @@ log "dump complete (${DUMP_SIZE})"
 # ---------- 6. upload ----------
 FAILED_AT="restic backup"
 log "uploading to restic repository"
-SNAPSHOT_ID=$(restic backup "$DUMP_FILE" --tag "$LABEL" --json \
+SNAPSHOT_ID=$(restic backup "$DUMP_FILE" --tag "$LABEL" --json --retry-lock 5m \
   | grep '"message_type":"summary"' \
   | sed -E 's/.*"snapshot_id":"([a-f0-9]+)".*/\1/')
 log "snapshot ${SNAPSHOT_ID}"
@@ -79,10 +79,15 @@ log "snapshot ${SNAPSHOT_ID}"
 # ---------- 7. retention ----------
 FAILED_AT="restic forget/prune"
 log "pruning to ${RETENTION}"
+# Prune needs an exclusive lock, so a lock left by a restic process killed
+# mid-run (e.g. container stopped) would block it forever. `unlock` only
+# removes stale locks (no refresh for 30 min, or dead PID on this host), so
+# live locks from other clients are untouched; --retry-lock waits for those.
+restic unlock
 # Group by tag: the default (host + path) puts every snapshot in its own
 # group, since the dump path and container hostname change each run, and
 # --keep-within then never removes anything.
-restic forget --tag "$LABEL" --group-by tags --keep-within "${RETENTION}" --prune
+restic forget --tag "$LABEL" --group-by tags --keep-within "${RETENTION}" --prune --retry-lock 5m
 
 # ---------- 8. success ----------
 touch "$STAMP"

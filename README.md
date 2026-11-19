@@ -380,8 +380,11 @@ You *can* mount over `/app/backup.sh` to patch behaviour. Avoid it outside debug
 ## Retention
 
 ```bash
-restic forget --tag "$LABEL" --group-by tags --keep-within 7d --prune
+restic unlock
+restic forget --tag "$LABEL" --group-by tags --keep-within 7d --prune --retry-lock 5m
 ```
+
+**`restic unlock` runs before every prune.** Prune needs an exclusive lock on the repository. If the container is stopped while any restic command is running, that command never removes its lock, and every later prune fails with `repository is already locked by PID … on <old container id>`. Restic treats a lock as stale once it goes 30 minutes without a refresh, or when its process is dead on the same host, but it never removes stale locks by itself. The hostname changes each time the container is recreated, so the dead-process check can't match either. `restic unlock` removes only stale locks, so a live lock from another client stays in place, and `--retry-lock 5m` waits for that one to clear. On an image built before this change, clear the lock by hand: `docker exec <container> restic unlock`.
 
 **`--group-by tags` is what makes retention delete anything.** By default restic splits snapshots into groups by host and path, and applies `--keep-within` to each group separately, measured from that group's newest snapshot. Every run here writes its dump to a fresh temp path, and the hostname changes whenever the container is recreated, so each snapshot ends up alone in its own group. It's then always "the newest", so it's always kept. Without this flag, nothing is ever removed and storage grows forever. Grouping by tag puts all of one database's snapshots into a single group.
 
